@@ -36,8 +36,8 @@ public class HttpClient {
     private String _url;
     private String _data;
     private byte[] _binary;
-    private int _readTimeout = 1000;
-    private int _connectTimeout = 5000;
+    private int _readTimeout = 15 * 1000;
+    private int _connectTimeout = 30 * 1000;
     private boolean _authentication = false;
     private String _credentials = null;
     private boolean _read = true;
