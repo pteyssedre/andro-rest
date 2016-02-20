@@ -16,6 +16,7 @@ import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.HashMap;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -43,6 +44,8 @@ public class HttpClient {
     private boolean _read = true;
     private boolean _write = true;
     private String _path = "";
+    private HashMap<String, String> _headers;
+    private boolean _anonymous = true;
 
     /**
      * Constructor of {@link HttpClient} class.
@@ -92,6 +95,21 @@ public class HttpClient {
     public HttpClient addData(String data) {
         this._data = data;
         this._type = HttpRequestType.POST;
+        return this;
+    }
+
+    /**
+     * Shorter to add header pair inside the request.
+     *
+     * @param key   {@link String} header name.
+     * @param value {@link String} header value.
+     * @return the current instance of {@link HttpClient}.
+     */
+    public HttpClient addHeader(String key, String value) {
+        if (this._headers == null) {
+            this._headers = new HashMap<>();
+        }
+        this._headers.put(key, value);
         return this;
     }
 
@@ -210,11 +228,18 @@ public class HttpClient {
         if (_authentication) {
             conn.setRequestProperty("Authorization", _credentials);
         }
+        if (!_anonymous) {
+            conn.setRequestProperty("User-Agent", System.getProperty("http.agent"));
+        }
+        conn.setRequestProperty("Accept-Encoding", "gzip, deflate");
+        conn.setRequestProperty("Connection", "keep-alive");
+        conn.setRequestProperty("Accept", "*/*");
 
         conn.setConnectTimeout(_connectTimeout);
 
         switch (_type) {
             case PUT:
+                conn.setRequestMethod("PUT");
                 break;
             case GET:
                 conn.setRequestMethod("GET");
@@ -228,10 +253,16 @@ public class HttpClient {
                 }
                 break;
             case DELETE:
+                conn.setRequestMethod("DELETE");
                 break;
         }
         if (_contentType != null) {
             conn.setRequestProperty("Content-Type", _contentType.getValue());
+        }
+        if (_headers != null) {
+            for (String value : _headers.keySet()) {
+                conn.setRequestProperty(value, _headers.get(value));
+            }
         }
         if (_read) {
             //Read
