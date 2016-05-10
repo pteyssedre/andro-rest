@@ -1,6 +1,7 @@
 package ca.teyssedre.restclient;
 
 import android.util.Base64;
+import android.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -13,10 +14,15 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.Reader;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.charset.Charset;
 import java.util.HashMap;
+import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -25,11 +31,11 @@ import javax.net.ssl.SSLSocketFactory;
  * HttpClient is a wrapper around {@link URLConnection} class to simplify the execution of
  * HTTP and HTTPS request. This class provide simple use of Http call, GET and POST.
  *
- * @version 1.0
+ * @version 1.1
  */
-@SuppressWarnings("unused")
 public class HttpClient {
 
+    private static final String TAG = "HttpClient";
     private boolean _https;
     private HttpRequestType _type;
     private HttpContentType _contentType;
@@ -46,6 +52,19 @@ public class HttpClient {
     private String _path = "";
     private HashMap<String, String> _headers;
     private boolean _anonymous = true;
+
+    /**
+     * Default constructor of {@link HttpClient} class.
+     *
+     * @param url value of {@link String} which provide the endpoint.
+     */
+    public HttpClient(String url) {
+        this._url = url;
+        if (_url.contains("https")) {
+            _https = true;
+        }
+        this._type = HttpRequestType.GET;
+    }
 
     /**
      * Constructor of {@link HttpClient} class.
@@ -66,7 +85,7 @@ public class HttpClient {
      * for custom validation or some other specific operation.
      *
      * @param factory instance of {@link SSLSocketFactory} which provide the {@link javax.net.ssl.SSLContext}
-     *                to create and validate handshare process.
+     *                to create and validate handshake process.
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient setSSLFactory(SSLSocketFactory factory) {
@@ -86,7 +105,7 @@ public class HttpClient {
     }
 
     /**
-     * By adding string data to the request, the {@code _type} parameter will be changed to
+     * By adding string data to the request, the {@link #_type} parameter will be changed to
      * {@link HttpRequestType#POST}.
      *
      * @param data {@link String} data to send.
@@ -95,6 +114,27 @@ public class HttpClient {
     public HttpClient addData(String data) {
         this._data = data;
         this._type = HttpRequestType.POST;
+        return this;
+    }
+
+    /**
+     * Shorter to add www form data into the request.
+     * The {@link #_type} parameter will be changed to {@link HttpRequestType#POST}.
+     * {@link #_contentType} will be set at {@link HttpContentType#APPLICATION_WWW_FORM}
+     *
+     * @param data {@link HttpForm} instance to include in the request.
+     * @return the current instance of {@link HttpClient}.
+     */
+    public HttpClient addFormData(HttpForm data) {
+        if (data != null) {
+            try {
+                String serialize = data.serialize();
+                this.addData(serialize);
+                this._contentType = HttpContentType.APPLICATION_WWW_FORM;
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            }
+        }
         return this;
     }
 
@@ -168,6 +208,7 @@ public class HttpClient {
      *
      * @param read {@link Boolean} value of the flag.
      * @return the current instance of {@link HttpClient}.
+     * @deprecated This should not be used, the {@link #_read} flag should be set on the {@link #_type} of the HttpClient.
      */
     public HttpClient setRead(boolean read) {
         _read = read;
@@ -179,6 +220,7 @@ public class HttpClient {
      *
      * @param write {@link Boolean} value of the flag.
      * @return the current instance of {@link HttpClient}.
+     * @deprecated This should not be used, the {@link #_write} flag should be set on the {@link #_type} of the HttpClient.
      */
     public HttpClient setWrite(boolean write) {
         _write = write;
@@ -212,6 +254,42 @@ public class HttpClient {
      * @throws IOException
      */
     public InputStream execute() throws IOException {
+        HttpURLConnection connection = prepare();
+        int responseCode = connection.getResponseCode();
+        Log.d(TAG, "response code : " + responseCode);
+        return connection.getInputStream();
+    }
+
+    /**
+     * Helper function to execute the request through the call of {@link HttpClient#execute()} and parse
+     * the result as a {@link JSONObject}.
+     *
+     * @return {@link JSONObject} instance parse from the {@link String} value of the {@link InputStream} of the request made.
+     * @throws IOException   throw by the {@link InputStream} object in case of error.
+     * @throws JSONException
+     */
+    public JSONObject getJson() throws IOException, JSONException {
+        return new JSONObject(getString());
+    }
+
+    /**
+     * Helper function to execute the request through the call of {@link HttpClient#execute()} and parse
+     * the result as a {@link String}.
+     *
+     * @return {@link String} value of the {@link InputStream} of the request made.
+     * @throws IOException could be throw
+     */
+    public String getString() throws IOException {
+        return readAsString(prepare());
+    }
+
+    /**
+     * Shorter to connect the {@link URL} object and setup the {@link HttpURLConnection} instance.
+     *
+     * @return {@link HttpURLConnection}
+     * @throws IOException
+     */
+    private HttpURLConnection prepare() throws IOException {
         URL url = new URL(_url + _path);
         HttpURLConnection conn;
         if (_https) {
@@ -285,43 +363,27 @@ public class HttpClient {
                 writer.close();
             }
         }
-        return conn.getInputStream();
-    }
-
-    /**
-     * Helper function to execute the request through the call of {@link HttpClient#execute()} and parse
-     * the result as a {@link JSONObject}.
-     *
-     * @return {@link JSONObject} instance parse from the {@link String} value of the {@link InputStream}
-     * of the request made.
-     * @throws IOException   throw by the {@link InputStream} object in case of error.
-     * @throws JSONException
-     */
-    public JSONObject getJson() throws IOException, JSONException {
-        return new JSONObject(readAsString(execute()));
-    }
-
-    /**
-     * Helper function to execute the request through the call of {@link HttpClient#execute()} and parse
-     * the result as a {@link String}.
-     *
-     * @return {@link String} value of the {@link InputStream} of the request made.
-     * @throws IOException could be throw
-     */
-    public String getString() throws IOException {
-        return readAsString(execute());
+        return conn;
     }
 
     /**
      * Helper to retrieved from an {@link InputStream} object the {@link String} value.
      *
-     * @param in {@link InputStream} object from the {@link java.net.URLConnection}.
+     * @param connection {@link HttpURLConnection}
      * @return the response of the server in a {@link String} format.
-     * @throws IOException could be throw due to the {@link InputStream}
+     * @throws IOException could be throw due to the {@link #execute()}
      */
-    private String readAsString(InputStream in) throws IOException {
+    private String readAsString(HttpURLConnection connection) throws IOException {
+        InputStream in = execute();
         if (in != null) {
-            BufferedReader rd = new BufferedReader(new InputStreamReader(in));
+            Charset charset = Charset.forName("UTF8");
+            Reader reader;
+            if ("gzip".equals(connection.getContentEncoding())) {
+                reader = new InputStreamReader(new GZIPInputStream(connection.getInputStream()), charset);
+            } else {
+                reader = new InputStreamReader(connection.getInputStream(), charset);
+            }
+            BufferedReader rd = new BufferedReader(reader);
             String line;
             StringBuilder response = new StringBuilder();
             while ((line = rd.readLine()) != null) {
@@ -332,5 +394,17 @@ public class HttpClient {
             return response.toString();
         }
         return null;
+    }
+
+    public HttpRequestType getType() {
+        return _type;
+    }
+
+    public void setType(HttpRequestType type) {
+        this._type = type;
+    }
+
+    public void includeUserAgent(boolean value) {
+        this._anonymous = value;
     }
 }

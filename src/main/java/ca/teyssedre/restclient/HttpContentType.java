@@ -9,7 +9,9 @@ public enum HttpContentType {
 
     APPLICATION_JSON(0, "application/json"),
     APPLICATION_XML(1, "application/xml"),
-    OCTET_STREAM(2, "octet/stream");
+    OCTET_STREAM(2, "octet/stream"),
+    TEXT_HTML(3, "text/html"),
+    APPLICATION_WWW_FORM(4, "application/x-www-form-urlencoded");
 
     private final int code;
     private final String value;
@@ -35,6 +37,10 @@ public enum HttpContentType {
                 return APPLICATION_XML;
             case 2:
                 return OCTET_STREAM;
+            case 3:
+                return TEXT_HTML;
+            case 4:
+                return APPLICATION_WWW_FORM;
             default:
                 return APPLICATION_JSON;
         }
@@ -50,6 +56,8 @@ public enum HttpContentType {
                     return APPLICATION_XML;
                 } else if ("octet/stream".equals(i)) {
                     return OCTET_STREAM;
+                } else if ("text/html".equals(i)) {
+                    return TEXT_HTML;
                 }
             }
             return APPLICATION_JSON;
