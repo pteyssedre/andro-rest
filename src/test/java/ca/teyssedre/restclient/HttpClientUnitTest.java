@@ -15,7 +15,7 @@ public class HttpClientUnitTest {
     @Test
     public void client_change_request_type() throws Exception {
         HttpClient client = new HttpClient("http://example.com");
-        client.setType(HttpRequestType.POST);
+
         assertEquals(HttpRequestType.POST, client.getType());
     }
 

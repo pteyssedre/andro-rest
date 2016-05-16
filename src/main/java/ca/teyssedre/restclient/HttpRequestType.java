@@ -7,6 +7,7 @@ package ca.teyssedre.restclient;
  */
 public enum HttpRequestType {
 
+    UNKNOWNS(-1),
     PUT(0),
     GET(1),
     POST(2),

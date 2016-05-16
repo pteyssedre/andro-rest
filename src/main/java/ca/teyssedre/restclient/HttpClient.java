@@ -7,24 +7,19 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.io.Reader;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.Charset;
-import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.zip.GZIPInputStream;
 
-import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
 /**
@@ -36,22 +31,7 @@ import javax.net.ssl.SSLSocketFactory;
 public class HttpClient {
 
     private static final String TAG = "HttpClient";
-    private boolean _https;
-    private HttpRequestType _type;
-    private HttpContentType _contentType;
-    private SSLSocketFactory _sslFactory;
-    private String _url;
-    private String _data;
-    private byte[] _binary;
-    private int _readTimeout = 15 * 1000;
-    private int _connectTimeout = 30 * 1000;
-    private boolean _authentication = false;
-    private String _credentials = null;
-    private boolean _read = true;
-    private boolean _write = true;
-    private String _path = "";
-    private HashMap<String, String> _headers;
-    private boolean _anonymous = true;
+    private Set<HttpRequest> requests;
 
     /**
      * Default constructor of {@link HttpClient} class.
@@ -59,11 +39,13 @@ public class HttpClient {
      * @param url value of {@link String} which provide the endpoint.
      */
     public HttpClient(String url) {
-        this._url = url;
-        if (_url.contains("https")) {
-            _https = true;
+        requests = new HashSet<>();
+        try {
+            requests.add(new HttpRequest(url, HttpRequestType.GET));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        this._type = HttpRequestType.GET;
+
     }
 
     /**
@@ -73,11 +55,12 @@ public class HttpClient {
      * @param type type {@link HttpRequestType} to indicate the type of HTTP method to execute.
      */
     public HttpClient(String url, HttpRequestType type) {
-        this._url = url;
-        if (_url.contains("https")) {
-            _https = true;
+        requests = new HashSet<>();
+        try {
+            requests.add(new HttpRequest(url, type));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        this._type = type;
     }
 
     /**
@@ -89,7 +72,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient setSSLFactory(SSLSocketFactory factory) {
-        this._sslFactory = factory;
+        for (HttpRequest request : requests) {
+            request.setSslFactory(factory);
+        }
         return this;
     }
 
@@ -98,42 +83,39 @@ public class HttpClient {
      *
      * @param path {@link String} path to join to the URL.
      * @return the current instance of {@link HttpClient}.
+     * @deprecated not used
      */
     public HttpClient appendPath(String path) {
-        this._path = path;
         return this;
     }
 
     /**
-     * By adding string data to the request, the {@link #_type} parameter will be changed to
+     * By adding string data to the request, the type parameter will be changed to
      * {@link HttpRequestType#POST}.
      *
      * @param data {@link String} data to send.
      * @return the current instance of {@link HttpClient}.
+     * @deprecated set the data to the request
      */
     public HttpClient addData(String data) {
-        this._data = data;
-        this._type = HttpRequestType.POST;
+        for (HttpRequest request : requests) {
+            request.addData(data);
+        }
         return this;
     }
 
     /**
      * Shorter to add www form data into the request.
-     * The {@link #_type} parameter will be changed to {@link HttpRequestType#POST}.
-     * {@link #_contentType} will be set at {@link HttpContentType#APPLICATION_WWW_FORM}
+     * The type parameter will be changed to {@link HttpRequestType#POST}.
+     * contentType will be set at {@link HttpContentType#APPLICATION_WWW_FORM}
      *
      * @param data {@link HttpForm} instance to include in the request.
      * @return the current instance of {@link HttpClient}.
+     * @deprecated set the data to the request
      */
     public HttpClient addFormData(HttpForm data) {
-        if (data != null) {
-            try {
-                String serialize = data.serialize();
-                this.addData(serialize);
-                this._contentType = HttpContentType.APPLICATION_WWW_FORM;
-            } catch (UnsupportedEncodingException e) {
-                e.printStackTrace();
-            }
+        for (HttpRequest request : requests) {
+            request.addFormData(data);
         }
         return this;
     }
@@ -146,10 +128,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient addHeader(String key, String value) {
-        if (this._headers == null) {
-            this._headers = new HashMap<>();
+        for (HttpRequest request : requests) {
+            request.addHeader(key, value);
         }
-        this._headers.put(key, value);
         return this;
     }
 
@@ -158,8 +139,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient addBinary(byte[] binary) {
-        this._binary = binary;
-        this._type = HttpRequestType.POST;
+        for (HttpRequest request : requests) {
+            request.addBinary(binary);
+        }
         return this;
     }
 
@@ -168,11 +150,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient addCredentials(String credentials) {
-        if (credentials == null || credentials.length() == 0) {
-            return this;
+        for (HttpRequest request : requests) {
+            request.addHeader("Authorization", credentials);
         }
-        _authentication = true;
-        this._credentials = credentials;
         return this;
     }
 
@@ -184,11 +164,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient addBasicCredentials(String credentials) {
-        if (credentials == null || credentials.length() == 0) {
-            return this;
+        for (HttpRequest request : requests) {
+            request.addBasic(credentials);
         }
-        _authentication = true;
-        this._credentials = "Basic " + Base64.encodeToString((credentials).getBytes(), Base64.NO_WRAP);
         return this;
     }
 
@@ -199,7 +177,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient setContentType(HttpContentType contentType) {
-        _contentType = contentType;
+        for (HttpRequest request : requests) {
+            request.setContentType(contentType);
+        }
         return this;
     }
 
@@ -208,10 +188,12 @@ public class HttpClient {
      *
      * @param read {@link Boolean} value of the flag.
      * @return the current instance of {@link HttpClient}.
-     * @deprecated This should not be used, the {@link #_read} flag should be set on the {@link #_type} of the HttpClient.
+     * @deprecated This should not be used, the read flag should be set on the type of the HttpClient.
      */
     public HttpClient setRead(boolean read) {
-        _read = read;
+        for (HttpRequest request : requests) {
+            request.setRead(read);
+        }
         return this;
     }
 
@@ -220,10 +202,12 @@ public class HttpClient {
      *
      * @param write {@link Boolean} value of the flag.
      * @return the current instance of {@link HttpClient}.
-     * @deprecated This should not be used, the {@link #_write} flag should be set on the {@link #_type} of the HttpClient.
+     * @deprecated This should not be used, the write flag should be set on the type of the HttpClient.
      */
     public HttpClient setWrite(boolean write) {
-        _write = write;
+        for (HttpRequest request : requests) {
+            request.setWrite(write);
+        }
         return this;
     }
 
@@ -234,7 +218,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient setTimeout(int millisecond) {
-        _connectTimeout = millisecond;
+        for (HttpRequest request : requests) {
+            request.setConnectTimeout(millisecond);
+        }
         return this;
     }
 
@@ -245,7 +231,9 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient setReadTimeout(int millisecond) {
-        _readTimeout = millisecond;
+        for (HttpRequest request : requests) {
+            request.setReadTimeout(millisecond);
+        }
         return this;
     }
 
@@ -255,6 +243,7 @@ public class HttpClient {
      */
     public InputStream execute() throws IOException {
         HttpURLConnection connection = prepare();
+        assert connection != null;
         int responseCode = connection.getResponseCode();
         Log.d(TAG, "response code : " + responseCode);
         return connection.getInputStream();
@@ -290,80 +279,12 @@ public class HttpClient {
      * @throws IOException
      */
     private HttpURLConnection prepare() throws IOException {
-        URL url = new URL(_url + _path);
-        HttpURLConnection conn;
-        if (_https) {
-            conn = (HttpsURLConnection) url.openConnection();
-        } else {
-            conn = (HttpURLConnection) url.openConnection();
+        if (requests.size() > 0) {
+            Iterator<HttpRequest> requestIterator = requests.iterator();
+            HttpRequest request = requestIterator.next();
+            return request.processRequest();
         }
-        if (_write && _type == HttpRequestType.POST) {
-            conn.setDoOutput(true);
-        }
-        if (_sslFactory != null) {
-            ((HttpsURLConnection) conn).setSSLSocketFactory(_sslFactory);
-        }
-        if (_authentication) {
-            conn.setRequestProperty("Authorization", _credentials);
-        }
-        if (!_anonymous) {
-            conn.setRequestProperty("User-Agent", System.getProperty("http.agent"));
-        }
-        conn.setRequestProperty("Accept-Encoding", "gzip, deflate");
-        conn.setRequestProperty("Connection", "keep-alive");
-        conn.setRequestProperty("Accept", "*/*");
-
-        conn.setConnectTimeout(_connectTimeout);
-
-        switch (_type) {
-            case PUT:
-                conn.setRequestMethod("PUT");
-                break;
-            case GET:
-                conn.setRequestMethod("GET");
-                break;
-            case POST:
-                conn.setRequestMethod("POST");
-                if (_data != null && !_data.isEmpty()) {
-                    conn.setRequestProperty("Content-Length", "" + String.valueOf(_data.getBytes().length));
-                } else if (_binary != null) {
-                    conn.setRequestProperty("Content-Length", "" + String.valueOf(_binary.length));
-                }
-                break;
-            case DELETE:
-                conn.setRequestMethod("DELETE");
-                break;
-        }
-        if (_contentType != null) {
-            conn.setRequestProperty("Content-Type", _contentType.getValue());
-        }
-        if (_headers != null) {
-            for (String value : _headers.keySet()) {
-                conn.setRequestProperty(value, _headers.get(value));
-            }
-        }
-        if (_read) {
-            //Read
-            conn.setDoInput(true);
-            conn.setReadTimeout(_readTimeout);
-        }
-
-        if (_type == HttpRequestType.POST) {
-            OutputStream os = conn.getOutputStream();
-            if (_data != null) {
-                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-                writer.write(_data);
-                writer.flush();
-                writer.close();
-            } else {
-                // binary to send could be very long ... should be able request
-                DataOutputStream writer = new DataOutputStream(os);
-                writer.write(_binary);
-                writer.flush();
-                writer.close();
-            }
-        }
-        return conn;
+        return null;
     }
 
     /**
@@ -397,14 +318,10 @@ public class HttpClient {
     }
 
     public HttpRequestType getType() {
-        return _type;
-    }
-
-    public void setType(HttpRequestType type) {
-        this._type = type;
-    }
-
-    public void includeUserAgent(boolean value) {
-        this._anonymous = value;
+        HttpRequestType type = HttpRequestType.UNKNOWNS;
+        if (this.requests.size() > 0) {
+            type = this.requests.iterator().next().getType();
+        }
+        return type;
     }
 }
