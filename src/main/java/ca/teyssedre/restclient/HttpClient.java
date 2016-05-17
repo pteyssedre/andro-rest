@@ -26,8 +26,9 @@ import javax.net.ssl.SSLSocketFactory;
  * HttpClient is a wrapper around {@link URLConnection} class to simplify the execution of
  * HTTP and HTTPS request. This class provide simple use of Http call, GET and POST.
  *
- * @version 1.1
+ * @version 2.0
  */
+@SuppressWarnings("unused")
 public class HttpClient {
 
     private static final String TAG = "HttpClient";
@@ -46,6 +47,11 @@ public class HttpClient {
             e.printStackTrace();
         }
 
+    }
+
+    public HttpClient(HttpRequest request) {
+        requests = new HashSet<>();
+        requests.add(request);
     }
 
     /**
@@ -90,7 +96,7 @@ public class HttpClient {
     }
 
     /**
-     * By adding string data to the request, the type parameter will be changed to
+     * By adding string data to all requests, the type parameter will be changed to
      * {@link HttpRequestType#POST}.
      *
      * @param data {@link String} data to send.
@@ -105,7 +111,7 @@ public class HttpClient {
     }
 
     /**
-     * Shorter to add www form data into the request.
+     * Shorter to add www form data into all the requests.
      * The type parameter will be changed to {@link HttpRequestType#POST}.
      * contentType will be set at {@link HttpContentType#APPLICATION_WWW_FORM}
      *
@@ -121,7 +127,7 @@ public class HttpClient {
     }
 
     /**
-     * Shorter to add header pair inside the request.
+     * Shorter to add header pair inside all the requests of this instance.
      *
      * @param key   {@link String} header name.
      * @param value {@link String} header value.
@@ -137,6 +143,7 @@ public class HttpClient {
     /**
      * @param binary array of byte to send through a POST request.
      * @return the current instance of {@link HttpClient}.
+     * @deprecated should be set into the {@link HttpRequest} instance.
      */
     public HttpClient addBinary(byte[] binary) {
         for (HttpRequest request : requests) {
