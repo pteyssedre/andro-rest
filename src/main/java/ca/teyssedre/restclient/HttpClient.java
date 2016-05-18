@@ -302,7 +302,7 @@ public class HttpClient {
      * @throws IOException could be throw due to the {@link #execute()}
      */
     private String readAsString(HttpURLConnection connection) throws IOException {
-        InputStream in = execute();
+        InputStream in = connection.getInputStream();
         if (in != null) {
             Charset charset = Charset.forName("UTF8");
             Reader reader;
