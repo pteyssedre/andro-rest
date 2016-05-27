@@ -3,7 +3,7 @@ package ca.teyssedre.restclient;
 /**
  * Enum to specify the Content-Type of a request.
  *
- * @version 1.0
+ * @version 1.1
  */
 public enum HttpContentType {
 
@@ -11,7 +11,8 @@ public enum HttpContentType {
     APPLICATION_XML(1, "application/xml"),
     OCTET_STREAM(2, "octet/stream"),
     TEXT_HTML(3, "text/html"),
-    APPLICATION_WWW_FORM(4, "application/x-www-form-urlencoded");
+    APPLICATION_WWW_FORM(4, "application/x-www-form-urlencoded"),
+    PLAIN_TEXT(5, "text/plain");
 
     private final int code;
     private final String value;
@@ -19,14 +20,6 @@ public enum HttpContentType {
     HttpContentType(int i, String v) {
         code = i;
         value = v;
-    }
-
-    public int getCode() {
-        return code;
-    }
-
-    public String getValue() {
-        return value;
     }
 
     public static HttpContentType parse(int i) {
@@ -41,6 +34,8 @@ public enum HttpContentType {
                 return TEXT_HTML;
             case 4:
                 return APPLICATION_WWW_FORM;
+            case 5:
+                return PLAIN_TEXT;
             default:
                 return APPLICATION_JSON;
         }
@@ -58,10 +53,20 @@ public enum HttpContentType {
                     return OCTET_STREAM;
                 } else if ("text/html".equals(i)) {
                     return TEXT_HTML;
+                } else if ("text/plain".equals(i)) {
+                    return PLAIN_TEXT;
                 }
             }
             return APPLICATION_JSON;
         }
         return APPLICATION_JSON;
+    }
+
+    public int getCode() {
+        return code;
+    }
+
+    public String getValue() {
+        return value;
     }
 }

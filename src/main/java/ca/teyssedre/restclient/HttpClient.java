@@ -1,7 +1,6 @@
 package ca.teyssedre.restclient;
 
 import android.util.Base64;
-import android.util.Log;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -15,9 +14,14 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.Charset;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.SSLSocketFactory;
@@ -33,6 +37,7 @@ public class HttpClient {
 
     private static final String TAG = "HttpClient";
     private Set<HttpRequest> requests;
+    private Map<UUID, HttpResponse> responses;
 
     /**
      * Default constructor of {@link HttpClient} class.
@@ -41,6 +46,7 @@ public class HttpClient {
      */
     public HttpClient(String url) {
         requests = new HashSet<>();
+        responses = new HashMap<>();
         try {
             requests.add(new HttpRequest(url, HttpRequestType.GET));
         } catch (Exception e) {
@@ -49,9 +55,10 @@ public class HttpClient {
 
     }
 
-    public HttpClient(HttpRequest request) {
+    public HttpClient(HttpRequest... array) {
         requests = new HashSet<>();
-        requests.add(request);
+        responses = new HashMap<>();
+        requests.addAll(Arrays.asList(array));
     }
 
     /**
@@ -62,11 +69,17 @@ public class HttpClient {
      */
     public HttpClient(String url, HttpRequestType type) {
         requests = new HashSet<>();
+        responses = new HashMap<>();
         try {
             requests.add(new HttpRequest(url, type));
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    public HttpClient() {
+        requests = new HashSet<>();
+        responses = new HashMap<>();
     }
 
     /**
@@ -245,15 +258,52 @@ public class HttpClient {
     }
 
     /**
-     * @return {@link InputStream} instance of the {@link URLConnection} instance.
-     * @throws IOException
+     * In order to avoid {@link java.security.cert.CertificateException} from the {@link HttpRequest}
+     * we provide a class {@link NoSSLValidation} that will ignore the Certificate validation process.
+     *
+     * @param flag {@link boolean} flag to activate custom ssl validator.
+     * @return {@link HttpClient} current instance.
      */
-    public InputStream execute() throws IOException {
-        HttpURLConnection connection = prepare();
-        assert connection != null;
-        int responseCode = connection.getResponseCode();
-        Log.d(TAG, "response code : " + responseCode);
-        return connection.getInputStream();
+    public HttpClient ignoreCertificateValidation(boolean flag) {
+        try {
+            setSSLFactory(flag ? new NoSSLValidation() : (SSLSocketFactory) SSLSocketFactory.getDefault());
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            e.printStackTrace();
+        }
+        return this;
+    }
+
+    public HttpResponse execute(HttpRequest request) {
+        if (request == null) {
+            return null;
+        }
+        process(request);
+        return request.getResponse();
+    }
+
+    public void execute() {
+        HttpRequest next = prepare();
+        if (next != null) {
+            process(next);
+            execute();
+        }
+    }
+
+    public HttpClient process(HttpRequest request) {
+        if (request != null) {
+            request.processRequest();
+
+            if (request.shouldWrite()) {
+                request.doPost();
+            }
+            if (request.shouldRead()) {
+                // TODO: read depend on content-type
+                readAsString(request.getConnection());
+            }
+
+            responses.put(request.getId(), request.getResponse());
+        }
+        return this;
     }
 
     /**
@@ -263,7 +313,9 @@ public class HttpClient {
      * @return {@link JSONObject} instance parse from the {@link String} value of the {@link InputStream} of the request made.
      * @throws IOException   throw by the {@link InputStream} object in case of error.
      * @throws JSONException
+     * @deprecated
      */
+    @Deprecated
     public JSONObject getJson() throws IOException, JSONException {
         return new JSONObject(getString());
     }
@@ -274,24 +326,48 @@ public class HttpClient {
      *
      * @return {@link String} value of the {@link InputStream} of the request made.
      * @throws IOException could be throw
+     * @deprecated
      */
+    @Deprecated
     public String getString() throws IOException {
-        return readAsString(prepare());
+        process(prepare());
+        return readAsString(prepare().processRequest().getConnection());
+    }
+
+    public HttpResponse getResponse(UUID id) {
+        return responses.get(id);
     }
 
     /**
      * Shorter to connect the {@link URL} object and setup the {@link HttpURLConnection} instance.
      *
-     * @return {@link HttpURLConnection}
-     * @throws IOException
+     * @return {@link HttpClient} current instance.
      */
-    private HttpURLConnection prepare() throws IOException {
-        if (requests.size() > 0) {
-            Iterator<HttpRequest> requestIterator = requests.iterator();
-            HttpRequest request = requestIterator.next();
-            return request.processRequest();
+    private HttpRequest prepare() {
+        HttpRequest request = getNextRequestToProcess();
+        if (request != null) {
+            responses.put(request.getId(), request.getResponse());
         }
-        return null;
+        return request;
+    }
+
+    /**
+     * Shorter to retrieve the next processable {@link HttpRequest}.
+     *
+     * @return {@link HttpRequest} element that can be process.
+     */
+    private HttpRequest getNextRequestToProcess() {
+        HttpRequest request = null;
+        for (HttpRequest req : requests) {
+            if (req.hasBeenProcessed()) {
+                continue;
+            }
+            request = req;
+            break;
+        }
+        if (request != null)
+            System.out.println(TAG + " retrieving request " + request.getId().toString());
+        return request;
     }
 
     /**
@@ -299,36 +375,39 @@ public class HttpClient {
      *
      * @param connection {@link HttpURLConnection}
      * @return the response of the server in a {@link String} format.
-     * @throws IOException could be throw due to the {@link #execute()}
      */
-    private String readAsString(HttpURLConnection connection) throws IOException {
-        InputStream in = connection.getInputStream();
-        if (in != null) {
-            Charset charset = Charset.forName("UTF8");
-            Reader reader;
-            if ("gzip".equals(connection.getContentEncoding())) {
-                reader = new InputStreamReader(new GZIPInputStream(connection.getInputStream()), charset);
-            } else {
-                reader = new InputStreamReader(connection.getInputStream(), charset);
+    private String readAsString(HttpURLConnection connection) {
+        if (connection == null) {
+            return null;
+        }
+        try {
+            InputStream in = connection.getInputStream();
+            if (in != null) {
+                Charset charset = Charset.forName("UTF8");
+                Reader reader;
+                if ("gzip".equals(connection.getContentEncoding())) {
+                    reader = new InputStreamReader(new GZIPInputStream(in), charset);
+                } else {
+                    reader = new InputStreamReader(in, charset);
+                }
+                BufferedReader rd = new BufferedReader(reader);
+                String line;
+                StringBuilder response = new StringBuilder();
+                while ((line = rd.readLine()) != null) {
+                    response.append(line);
+                    response.append('\r');
+                }
+                rd.close();
+                return response.toString();
             }
-            BufferedReader rd = new BufferedReader(reader);
-            String line;
-            StringBuilder response = new StringBuilder();
-            while ((line = rd.readLine()) != null) {
-                response.append(line);
-                response.append('\r');
-            }
-            rd.close();
-            return response.toString();
+        } catch (IOException e) {
+            e.printStackTrace();
+
         }
         return null;
     }
 
     public HttpRequestType getType() {
-        HttpRequestType type = HttpRequestType.UNKNOWNS;
-        if (this.requests.size() > 0) {
-            type = this.requests.iterator().next().getType();
-        }
-        return type;
+        return getNextRequestToProcess().getType();
     }
 }

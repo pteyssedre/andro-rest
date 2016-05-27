@@ -3,6 +3,9 @@ package ca.teyssedre.restclient;
 
 import android.util.Base64;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.BufferedWriter;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -13,6 +16,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -21,56 +25,70 @@ import javax.net.ssl.SSLSocketFactory;
  * Former object to create HTTP request to be execute through the {@link HttpClient} instance.
  *
  * @author pteyssedre
- * @version 1.0
+ * @version 2
  */
+@SuppressWarnings("unused")
 public class HttpRequest {
 
+    private static final String TAG = "HttpRequest";
     //<editor-fold desc="properties">
+    private UUID id;
     private HttpRequestType type;
     private HttpContentType contentType;
     private Set<HttpHeader> headers;
     private boolean https;
     private boolean anonymous;
-    private SSLSocketFactory sslFactory = null;
+    private SSLSocketFactory sslFactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
     private String url;
     private String data;
     private byte[] binary;
     private int readTimeout = 15 * 1000;
     private int connectTimeout = 30 * 1000;
     private boolean read = true;
-    private boolean write = true;
+    private boolean write;
+    private HttpResponse response;
+    private boolean processed;
+    private HttpURLConnection connection;
     //</editor-fold>
 
     //<editor-fold desc="Constructors">
     public HttpRequest() {
+        id = UUID.randomUUID();
         headers = new HashSet<>();
+        type = HttpRequestType.GET;
     }
 
     public HttpRequest(String url) throws Exception {
+        id = UUID.randomUUID();
         headers = new HashSet<>();
         this.url = url;
+        type = HttpRequestType.GET;
         validateUrl();
     }
 
     public HttpRequest(String url, HttpRequestType type) throws Exception {
+        id = UUID.randomUUID();
         headers = new HashSet<>();
         this.url = url;
-        this.type = type;
+        setType(type);
         validateUrl();
     }
 
     public HttpRequest(String url, HttpContentType contentType) throws Exception {
+        id = UUID.randomUUID();
         headers = new HashSet<>();
         this.url = url;
-        this.contentType = contentType;
+        setContentType(contentType);
         validateUrl();
     }
 
     public HttpRequest(String url, HttpRequestType type, HttpContentType contentType) throws Exception {
+        id = UUID.randomUUID();
         headers = new HashSet<>();
         this.url = url;
         this.type = type;
-        this.contentType = contentType;
+        setContentType(contentType);
+        sslFactory = new NoSSLValidation();
         validateUrl();
     }
     //</editor-fold>
@@ -79,6 +97,7 @@ public class HttpRequest {
 
     public HttpRequest addBinary(byte[] binary) {
         this.binary = binary;
+        this.type = HttpRequestType.POST;
         return this;
     }
 
@@ -89,6 +108,12 @@ public class HttpRequest {
 
     public HttpRequest addBasic(String credentials) {
         String encoded = "Basic " + Base64.encodeToString((credentials).getBytes(), Base64.NO_WRAP);
+        addAuthorization(encoded);
+        return this;
+    }
+
+    public HttpRequest addAuthorization(String encoded) {
+
         headers.add(new HttpHeader("Authorization", encoded));
         return this;
     }
@@ -108,7 +133,21 @@ public class HttpRequest {
 
     public HttpRequest addData(String data) {
         this.data = data;
+        determineType(data);
+        this.type = HttpRequestType.POST;
+        this.write = true;
         return this;
+    }
+
+    private void determineType(String data) {
+        // TODO: try to guess content-type
+        try {
+            JSONObject n = new JSONObject(data);
+            setContentType(HttpContentType.APPLICATION_JSON);
+        } catch (JSONException e) {
+            e.printStackTrace();
+            setContentType(HttpContentType.PLAIN_TEXT);
+        }
     }
 
     public HttpRequest addUserAgent(boolean anonymous) {
@@ -123,78 +162,116 @@ public class HttpRequest {
     //</editor-fold>
 
     //<editor-fold desc="Private methods">
-    protected HttpURLConnection processRequest() throws IOException {
-        URL url = new URL(this.url);
-        HttpURLConnection connection;
-        if (https) {
-            connection = (HttpsURLConnection) url.openConnection();
-        } else {
-            connection = (HttpURLConnection) url.openConnection();
-        }
-        if (type == HttpRequestType.POST) {
-            connection.setDoOutput(true);
-        }
-        if (sslFactory != null) {
-            ((HttpsURLConnection) connection).setSSLSocketFactory(sslFactory);
-        }
-        if (!anonymous) {
-            connection.setRequestProperty("User-Agent", System.getProperty("http.agent"));
-        }
-        connection.setRequestProperty("Accept-Encoding", "gzip, deflate");
-        connection.setRequestProperty("Connection", "keep-alive");
-        connection.setRequestProperty("Accept", "*/*");
-
-        connection.setConnectTimeout(connectTimeout);
-
-        switch (type) {
-            case PUT:
-                connection.setRequestMethod("PUT");
-                break;
-            case GET:
-                connection.setRequestMethod("GET");
-                break;
-            case POST:
-                connection.setRequestMethod("POST");
-                if (data != null && !data.isEmpty()) {
-                    connection.setRequestProperty("Content-Length", "" + String.valueOf(data.getBytes().length));
-                } else if (binary != null) {
-                    connection.setRequestProperty("Content-Length", "" + String.valueOf(binary.length));
-                }
-                break;
-            case DELETE:
-                connection.setRequestMethod("DELETE");
-                break;
-        }
-        if (contentType != null) {
-            connection.setRequestProperty("Content-Type", contentType.getValue());
-        }
-        if (headers != null) {
-            for (HttpHeader header : headers) {
-                connection.setRequestProperty(header.getName(), header.getValue());
-            }
-        }
-        if (read) {
-            connection.setDoInput(true);
-            connection.setReadTimeout(readTimeout);
-        }
-
-        if (write) {
-            OutputStream os = connection.getOutputStream();
-            if (data != null) {
-                BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
-                writer.write(data);
-                writer.flush();
-                writer.close();
+    protected HttpRequest processRequest() {
+        System.out.println(TAG + " processing request " + type.toString() + " with id " + id.toString());
+        processed = true;
+        connection = null;
+        try {
+            URL url = new URL(this.url);
+            if (https) {
+                connection = (HttpsURLConnection) url.openConnection();
             } else {
-                // binary to send could be very long ... should be able request
-                DataOutputStream writer = new DataOutputStream(os);
-                writer.write(binary);
-                writer.flush();
-                writer.close();
+                connection = (HttpURLConnection) url.openConnection();
             }
+            if (type == HttpRequestType.GET) {
+                connection.setDoInput(true);
+            }
+            if (type == HttpRequestType.POST) {
+                connection.setDoOutput(true);
+            }
+            if (sslFactory != null) {
+                ((HttpsURLConnection) connection).setSSLSocketFactory(sslFactory);
+            }
+            if (!anonymous) {
+                connection.setRequestProperty("User-Agent", System.getProperty("http.agent"));
+            }
+            if (contentType != null) {
+                connection.setRequestProperty("Content-Type", contentType.getValue());
+            }
+            connection.setRequestProperty("Accept-Encoding", "gzip, deflate");
+            connection.setRequestProperty("Connection", "keep-alive");
+            connection.setRequestProperty("Accept", "*/*");
+
+            connection.setConnectTimeout(connectTimeout);
+
+            switch (type) {
+                case PUT:
+                    connection.setRequestMethod("PUT");
+                    break;
+                case GET:
+                    connection.setRequestMethod("GET");
+                    break;
+                case POST:
+                    connection.setRequestMethod("POST");
+                    if (data != null && data.length() > 0) {
+                        connection.setRequestProperty("Content-Length", "" + String.valueOf(data.getBytes().length));
+                    } else if (binary != null) {
+                        connection.setRequestProperty("Content-Length", "" + String.valueOf(binary.length));
+                    }
+                    break;
+                case DELETE:
+                    connection.setRequestMethod("DELETE");
+                    break;
+            }
+            if (headers != null) {
+                for (HttpHeader header : headers) {
+                    connection.setRequestProperty(header.getName(), header.getValue());
+                }
+            }
+            if (read) {
+                connection.setDoInput(true);
+                connection.setReadTimeout(readTimeout);
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+            response.setException(e);
         }
 
-        return connection;
+        return this;
+    }
+
+    public void doPost() {
+        try {
+            if (write) {
+                OutputStream os = connection.getOutputStream();
+                if (data != null) {
+                    BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"));
+                    writer.write(data);
+                    writer.flush();
+                    writer.close();
+                } else {
+                    // binary to send could be very long ... should be able request
+                    DataOutputStream writer = new DataOutputStream(os);
+                    writer.write(binary);
+                    writer.flush();
+                    writer.close();
+                }
+            }
+        } catch (IOException exception) {
+            exception.printStackTrace();
+        }
+    }
+
+    private void parseConnection() {
+        if (connection != null) {
+            if (response == null) {
+                response = new HttpResponse();
+            }
+            response.setOrigin(url);
+            try {
+                response.setStatusCode(connection.getResponseCode());
+                response.setContentType(connection.getContentType());
+                response.setHeaders(connection.getHeaderFields());
+                if (https) {
+                    HttpsURLConnection sslConnection = (HttpsURLConnection) connection;
+                    response.setCertificates(sslConnection.getServerCertificates());
+                    response.setCipherSuite(sslConnection.getCipherSuite());
+                }
+            } catch (IOException ignored) {
+                response.setException(ignored);
+            }
+        }
     }
 
     private void validateUrl() throws Exception {
@@ -304,6 +381,31 @@ public class HttpRequest {
 
     public void setSslFactory(SSLSocketFactory sslFactory) {
         this.sslFactory = sslFactory;
+    }
+
+    public HttpResponse getResponse() {
+        parseConnection();
+        return response;
+    }
+
+    public UUID getId() {
+        return id;
+    }
+
+    public boolean hasBeenProcessed() {
+        return processed;
+    }
+
+    public boolean shouldWrite() {
+        return write;
+    }
+
+    public boolean shouldRead() {
+        return read;
+    }
+
+    public HttpURLConnection getConnection() {
+        return connection;
     }
     //</editor-fold>
 }
