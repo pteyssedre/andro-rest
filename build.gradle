@@ -13,11 +13,11 @@ ext {
     siteUrl = 'https://github.com/pteyssedre/andro-rest'
     gitUrl = 'https://github.com/pteyssedre/android-rest.git'
 
-    libraryVersion = '0.1.3'
+    libraryVersion = '0.2.0'
 
     developerId = 'pteyssedre'
     developerName = 'Pierre Teyssedre'
-    developerEmail = 'pierre@teyssedre'
+    developerEmail = 'pierre@teyssedre.ca'
 
     licenseName = 'The Apache Software License, Version 2.0'
     licenseUrl = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
@@ -26,13 +26,16 @@ ext {
 
 android {
     compileSdkVersion 23
-    buildToolsVersion "23.0.2"
+    buildToolsVersion "23.0.3"
+    testOptions {
+        unitTests.returnDefaultValues = false
+    }
 
     defaultConfig {
-        minSdkVersion 15
+        minSdkVersion 8
         targetSdkVersion 23
-        versionCode 6
-        versionName "1.5"
+        versionCode 7
+        versionName "2"
     }
     buildTypes {
         release {
@@ -45,6 +48,7 @@ android {
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
     testCompile 'junit:junit:4.12'
+    testCompile "org.mockito:mockito-core:1.10.19"
     compile 'com.android.support:appcompat-v7:23.4.0'
 }
 

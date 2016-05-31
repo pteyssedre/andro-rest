@@ -13,6 +13,7 @@ public class HttpResponse {
     private String cipherSuite;
     private Exception exception;
     private Map<String, List<String>> headers;
+    private String stringResponse;
 
     public HttpResponse() {
     }
@@ -70,6 +71,7 @@ public class HttpResponse {
     }
 
     public void setException(Exception exception) {
+        // TODO manage exception parsing custom exception should be creating in order easily manage them.
         this.exception = exception;
     }
 
@@ -79,5 +81,13 @@ public class HttpResponse {
 
     public void setHeaders(Map<String, List<String>> headers) {
         this.headers = headers;
+    }
+
+    public String getStringResponse() {
+        return stringResponse;
+    }
+
+    public void setStringResponse(String stringResponse) {
+        this.stringResponse = stringResponse;
     }
 }

@@ -6,17 +6,23 @@ import android.util.Base64;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.Charset;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -173,12 +179,6 @@ public class HttpRequest {
             } else {
                 connection = (HttpURLConnection) url.openConnection();
             }
-            if (type == HttpRequestType.GET) {
-                connection.setDoInput(true);
-            }
-            if (type == HttpRequestType.POST) {
-                connection.setDoOutput(true);
-            }
             if (sslFactory != null) {
                 ((HttpsURLConnection) connection).setSSLSocketFactory(sslFactory);
             }
@@ -190,6 +190,7 @@ public class HttpRequest {
             }
             connection.setRequestProperty("Accept-Encoding", "gzip, deflate");
             connection.setRequestProperty("Connection", "keep-alive");
+            // TODO: may change depending on content-type
             connection.setRequestProperty("Accept", "*/*");
 
             connection.setConnectTimeout(connectTimeout);
@@ -218,9 +219,10 @@ public class HttpRequest {
                     connection.setRequestProperty(header.getName(), header.getValue());
                 }
             }
-            if (read) {
-                connection.setDoInput(true);
-                connection.setReadTimeout(readTimeout);
+            connection.setReadTimeout(readTimeout);
+            connection.connect();
+            if (type == HttpRequestType.POST) {
+                connection.setDoOutput(true);
             }
 
         } catch (IOException e) {
@@ -231,7 +233,43 @@ public class HttpRequest {
         return this;
     }
 
-    public void doPost() {
+    protected void doRead() {
+        if (connection == null) {
+            return;
+        }
+        try {
+            InputStream in = connection.getInputStream();
+            if (in != null) {
+                Charset charset = Charset.forName("UTF8");
+                Reader reader;
+                if ("gzip".equals(connection.getContentEncoding())) {
+                    reader = new InputStreamReader(new GZIPInputStream(in), charset);
+                } else {
+                    reader = new InputStreamReader(in, charset);
+                }
+                BufferedReader rd = new BufferedReader(reader);
+                String line;
+                StringBuilder sbt = new StringBuilder();
+                while ((line = rd.readLine()) != null) {
+                    sbt.append(line);
+                }
+                rd.close();
+                addStringResult(sbt.toString());
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+
+        }
+    }
+
+    private void addStringResult(String data) {
+        if (response == null) {
+            response = new HttpResponse();
+        }
+        response.setStringResponse(data);
+    }
+
+    protected void doWrite() {
         try {
             if (write) {
                 OutputStream os = connection.getOutputStream();
@@ -250,6 +288,7 @@ public class HttpRequest {
             }
         } catch (IOException exception) {
             exception.printStackTrace();
+            response.setException(exception);
         }
     }
 
@@ -263,10 +302,14 @@ public class HttpRequest {
                 response.setStatusCode(connection.getResponseCode());
                 response.setContentType(connection.getContentType());
                 response.setHeaders(connection.getHeaderFields());
-                if (https) {
-                    HttpsURLConnection sslConnection = (HttpsURLConnection) connection;
-                    response.setCertificates(sslConnection.getServerCertificates());
-                    response.setCipherSuite(sslConnection.getCipherSuite());
+                try {
+                    if (https) {
+                        HttpsURLConnection sslConnection = (HttpsURLConnection) connection;
+                        response.setCertificates(sslConnection.getServerCertificates());
+                        response.setCipherSuite(sslConnection.getCipherSuite());
+                    }
+                } catch (RuntimeException ignored) {
+
                 }
             } catch (IOException ignored) {
                 response.setException(ignored);
@@ -407,5 +450,6 @@ public class HttpRequest {
     public HttpURLConnection getConnection() {
         return connection;
     }
+
     //</editor-fold>
 }

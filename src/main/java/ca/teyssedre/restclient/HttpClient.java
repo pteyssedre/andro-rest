@@ -38,6 +38,8 @@ public class HttpClient {
     private static final String TAG = "HttpClient";
     private Set<HttpRequest> requests;
     private Map<UUID, HttpResponse> responses;
+    private SSLSocketFactory sslFactory;
+    private boolean hasUA = true;
 
     /**
      * Default constructor of {@link HttpClient} class.
@@ -91,6 +93,7 @@ public class HttpClient {
      * @return the current instance of {@link HttpClient}.
      */
     public HttpClient setSSLFactory(SSLSocketFactory factory) {
+        sslFactory = factory;
         for (HttpRequest request : requests) {
             request.setSslFactory(factory);
         }
@@ -263,7 +266,9 @@ public class HttpClient {
      *
      * @param flag {@link boolean} flag to activate custom ssl validator.
      * @return {@link HttpClient} current instance.
+     * @deprecated
      */
+    @Deprecated
     public HttpClient ignoreCertificateValidation(boolean flag) {
         try {
             setSSLFactory(flag ? new NoSSLValidation() : (SSLSocketFactory) SSLSocketFactory.getDefault());
@@ -273,37 +278,31 @@ public class HttpClient {
         return this;
     }
 
+    /**
+     * @param request {@link }
+     * @return {@link HttpResponse} instance of the processed {@link HttpRequest}.
+     */
     public HttpResponse execute(HttpRequest request) {
         if (request == null) {
             return null;
         }
+        if (sslFactory != null) {
+            request.setSslFactory(sslFactory);
+        }
+        request.addUserAgent(hasUA);
         process(request);
         return request.getResponse();
     }
 
+    /**
+     * Executing {@link HttpRequest} queue elements.
+     */
     public void execute() {
         HttpRequest next = prepare();
         if (next != null) {
             process(next);
             execute();
         }
-    }
-
-    public HttpClient process(HttpRequest request) {
-        if (request != null) {
-            request.processRequest();
-
-            if (request.shouldWrite()) {
-                request.doPost();
-            }
-            if (request.shouldRead()) {
-                // TODO: read depend on content-type
-                readAsString(request.getConnection());
-            }
-
-            responses.put(request.getId(), request.getResponse());
-        }
-        return this;
     }
 
     /**
@@ -375,7 +374,9 @@ public class HttpClient {
      *
      * @param connection {@link HttpURLConnection}
      * @return the response of the server in a {@link String} format.
+     * @deprecated
      */
+    @Deprecated
     private String readAsString(HttpURLConnection connection) {
         if (connection == null) {
             return null;
@@ -407,7 +408,30 @@ public class HttpClient {
         return null;
     }
 
+    private HttpClient process(HttpRequest request) {
+        if (request != null) {
+            request.processRequest();
+
+            if (request.shouldWrite()) {
+                request.doWrite();
+            }
+            if (request.shouldRead()) {
+                request.doRead();
+            }
+
+            responses.put(request.getId(), request.getResponse());
+        }
+        return this;
+    }
+
     public HttpRequestType getType() {
         return getNextRequestToProcess().getType();
+    }
+
+    public void includeUserAgent(boolean flag) {
+        hasUA = flag;
+        for (HttpRequest req : requests) {
+            req.addUserAgent(flag);
+        }
     }
 }
