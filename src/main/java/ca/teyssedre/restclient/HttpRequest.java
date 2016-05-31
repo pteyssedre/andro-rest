@@ -221,9 +221,6 @@ public class HttpRequest {
             }
             connection.setReadTimeout(readTimeout);
             connection.connect();
-            if (type == HttpRequestType.POST) {
-                connection.setDoOutput(true);
-            }
 
         } catch (IOException e) {
             e.printStackTrace();
