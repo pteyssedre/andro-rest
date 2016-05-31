@@ -169,7 +169,7 @@ public class HttpRequest {
 
     //<editor-fold desc="Private methods">
     protected HttpRequest processRequest() {
-        System.out.println(TAG + " processing request " + type.toString() + " with id " + id.toString());
+        response = new HttpResponse();
         processed = true;
         connection = null;
         try {
@@ -254,8 +254,7 @@ public class HttpRequest {
                 addStringResult(sbt.toString());
             }
         } catch (IOException e) {
-            e.printStackTrace();
-
+            response.setException(e);
         }
     }
 
@@ -284,7 +283,6 @@ public class HttpRequest {
                 }
             }
         } catch (IOException exception) {
-            exception.printStackTrace();
             response.setException(exception);
         }
     }

@@ -13,7 +13,7 @@ ext {
     siteUrl = 'https://github.com/pteyssedre/andro-rest'
     gitUrl = 'https://github.com/pteyssedre/android-rest.git'
 
-    libraryVersion = '0.2.1'
+    libraryVersion = '0.2.2'
 
     developerId = 'pteyssedre'
     developerName = 'Pierre Teyssedre'
